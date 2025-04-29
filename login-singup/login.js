@@ -49,5 +49,5 @@ loginButton.addEventListener("click", async (event) => {
 
 function loginWithGoogle() {
   // เปลี่ยนเส้นทางไปยัง Google OAuth URL
-  window.location.href = 'http://localhost:5000/auth/google';
+  window.location.href = 'project-api-objectxify.onrender.com/auth/google';
 }
