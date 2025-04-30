@@ -36,6 +36,7 @@ import random
 from ocr_receipt import extract_info
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+from urllib.parse import quote  
 
  
  
@@ -269,33 +270,8 @@ def delete_file(file_path):
     except Exception as e:
         print(f"Error deleting file: {e}")
  
-# Decorator ตรวจสอบ API Key จาก MongoDB
-def require_api_key(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-API-KEY')
-        # ตรวจสอบว่ามี API Key และถูกต้องหรือไม่
-        if api_key != "your_actual_api_key":
-            return jsonify({"error": "API Key ไม่ถูกต้อง หรือไม่ได้ส่งมา"}), 403
-        return f(*args, **kwargs)
-    return decorated_function
- 
-# ฟังก์ชันสำหรับตรวจสอบ Referer
-def check_referer(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        referer = request.headers.get('Referer')
-        # ตรวจสอบว่า referer ต้องเริ่มต้นด้วย URL ของคุณ
-        if referer and referer.startswith("https://project-api-objectxify.onrender.com"):
-            return f(*args, **kwargs)
-        # ถ้าไม่ใช่ referer ที่อนุญาต ให้ตรวจสอบ API Key แทน
-        return require_api_key(f)(*args, **kwargs)
-    return decorated_function
- 
 # API วิเคราะห์ภาพ
 @app.route('/analyze-image', methods=['POST'])
-@check_referer    # ตรวจสอบ Referer ก่อนเรียกใช้งาน
-@require_api_key  # ตรวจสอบ API Key ก่อนเรียกใช้งาน
 def analyze_image():
     try:
         # ดึง api_key จาก MongoDB เพื่อใช้งาน
@@ -304,7 +280,10 @@ def analyze_image():
        
         # แปลง quota เป็น integer
         quota = int(api_key_data['quota'])  # แปลง quota เป็น integer
-        if quota <= 0:
+        if quota == -1:
+            # ยกเว้นกรณี quota เป็น -1
+            pass
+        elif quota <= 0:
             return jsonify({'error': 'Quota exceeded'}), 400
  
         if 'image' not in request.files:
@@ -367,8 +346,12 @@ def analyze_image():
         # ตั้งค่าให้ลบไฟล์ภาพที่ประมวลผลหลังจาก 5 วินาที
         threading.Timer(10, delete_file, args=[result_image_path]).start()
  
-        # ลด quota ของ API Key ลง 1
-        api_keys_collection.update_one({"api_key": api_key}, {"$set": {"quota": quota - 1}})
+        # ลด quota ของ API Key ลง 1 เฉพาะกรณี quota ไม่ใช่ -1 (คือมีจำกัด)
+        if quota != -1:
+            api_keys_collection.update_one(
+        {"api_key": api_key},
+        {"$set": {"quota": quota - 1}}
+        )
  
         return jsonify({
             'status': status,
