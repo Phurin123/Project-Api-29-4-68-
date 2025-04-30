@@ -34,6 +34,8 @@ from flask_limiter.util import get_remote_address
 from flask_mail import Mail, Message
 import random
 from ocr_receipt import extract_info
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 
  
  
@@ -62,9 +64,16 @@ GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/c
 
  
 # เชื่อมต่อ MongoDB
-MONGO_URI = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"  # เปลี่ยนตามการตั้งค่าของคุณ
-# เปลี่ยนตามการตั้งค่าของคุณ
-client = MongoClient(MONGO_URI)
+uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
+# Create a new client and connect to the server
+client = MongoClient(uri, server_api=ServerApi('1'))
+# Send a ping to confirm a successful connection
+try:
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
+
 db = client["api_database"]
 users_collection = db["users"]
 api_keys_collection = db["api_keys"]
