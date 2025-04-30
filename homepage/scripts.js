@@ -38,6 +38,9 @@ function uploadImage() {
     try {
       const response = await fetch('https://project-api-objectxify.onrender.com/analyze-image', {
         method: 'POST',
+        headers: {
+          'x-api-key': 'acd5e8d4-ee65-435d-985d-45eeb9e5cc77'  // 🔑 เปลี่ยนตรงนี้เป็น API Key จริงของคุณ
+        },
         body: formData,
       });
 
