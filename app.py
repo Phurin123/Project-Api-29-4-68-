@@ -277,7 +277,12 @@ def analyze_image():
         # ดึง api_key จาก MongoDB เพื่อใช้งาน
         api_key = request.headers.get('x-api-key')
         api_key_data = api_keys_collection.find_one({"api_key": api_key})
-       
+        if not api_key_data:
+            return jsonify({'error': 'Invalid API Key'}), 401
+        
+        if 'analysis_types' not in api_key_data:
+            return jsonify({'error': 'analysis_types not found in API Key data'}), 400
+        
         # แปลง quota เป็น integer
         quota = int(api_key_data['quota'])  # แปลง quota เป็น integer
         if quota == -1:
@@ -310,18 +315,11 @@ def analyze_image():
             {"name": "violence", "model": models["violence"]}
         ]
        
-        threads = []
+        # ประมวลผลแต่ละโมเดลแบบ synchronous (ทีละอัน)
         for model_info in models_info:
-            # ตรวจสอบว่า analysis_types ใน API Key มีประเภทนี้หรือไม่
             if model_info["name"] in api_key_data['analysis_types']:
-                thread = threading.Thread(target=analyze_model, args=(file_path, model_info["model"], results_dict, model_info["name"], 0.5))
-                threads.append(thread)
-                thread.start()
- 
-        # รอให้ทุก Thread เสร็จ
-        for thread in threads:
-            thread.join()
- 
+                analyze_model(file_path, model_info["model"], results_dict, model_info["name"], 0.5)
+
         # รวมผลลัพธ์จากโมเดลทั้งหมด
         detections = []
         for model_info in models_info:
