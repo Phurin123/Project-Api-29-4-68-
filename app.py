@@ -37,7 +37,8 @@ from ocr_receipt import extract_info
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from urllib.parse import quote  
-
+from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
  
  
 # การตั้งค่า Flask
@@ -163,16 +164,17 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
  
 # โหลดโมเดลสำหรับการทำนาย (ต้องโหลดโมเดลให้ถูกต้อง)
-def load_model(model_name):  
+def load_model(model_name):
     return YOLO(os.path.join(os.path.dirname(__file__), 'models', model_name))
  
 # โมเดล
-models = {
-    "porn": load_model('best-porn.pt'),
-    "weapon": load_model('best-weapon.pt'),
-    "cigarette": load_model('best-cigarette.pt'),
-    "violence": load_model('best-violence.pt')
-}
+models = {}
+
+def get_model(model_name):
+    # โหลดโมเดลเฉพาะเมื่อมีการเรียกใช้งาน
+    if model_name not in models:
+        models[model_name] = load_model(f"best-{model_name}.pt")
+    return models[model_name]
  
 # รายการของ labels ที่ไม่เหมาะสม
 INAPPROPRIATE_LABELS = {}
@@ -189,8 +191,8 @@ CONFIDENCE_THRESHOLDS = {
 }
  
 # ฟังก์ชันสำหรับการวิเคราะห์ภาพ
-def analyze_model(image_path, model, results_dict, label, threshold):
-    # วิเคราะห์ภาพและเก็บผลลัพธ์ใน dictionary
+def analyze_model(image_path, model_name, results_dict, threshold):
+    model = get_model(model_name)  # โหลดโมเดลเฉพาะเมื่อใช้
     results = model.predict(source=image_path)
     filtered_results = []
     for result in results:
@@ -204,7 +206,7 @@ def analyze_model(image_path, model, results_dict, label, threshold):
                     "confidence": confidence,
                     "bbox": bbox
                 })
-    results_dict[label] = filtered_results
+    results_dict[model_name] = filtered_results
  
 # ฟังก์ชันตรวจสอบประเภทไฟล์ (รองรับทุกประเภท)
 def allowed_file(filename):
@@ -230,36 +232,36 @@ def convert_jfif_to_jpg(input_path):
 # ฟังก์ชันวาด Bounding Box
 def draw_bounding_boxes(image_path, detections, output_path):
     image = cv2.imread(image_path)
-   
+
     for detection in detections:
         x1, y1, x2, y2 = map(int, detection["bbox"])  # แปลงพิกัดจาก float เป็น int
         label = detection["label"]
         confidence = detection["confidence"]
- 
+
         # ตรวจสอบขนาดของ Bounding Box เพื่อให้ไม่เกินขนาดของภาพ
         image_height, image_width = image.shape[:2]
         x1 = max(0, min(x1, image_width - 1))
         y1 = max(0, min(y1, image_height - 1))
         x2 = max(0, min(x2, image_width - 1))
         y2 = max(0, min(y2, image_height - 1))
- 
+
         # วาด Bounding Box
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)  # สีเขียว
- 
+
         # สร้างข้อความที่ต้องการแสดง
         text = f"{label} ({confidence:.2f})"
-       
+
         # วัดขนาดข้อความ
         text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-       
+
         # วาดพื้นหลังข้อความ
         background_rect = (x1, y1 - text_size[1] - 10, x1 + text_size[0], y1)
         cv2.rectangle(image, (background_rect[0], background_rect[1]),
                       (background_rect[2], background_rect[3]), (0, 255, 0), -1)  # สีเขียวทึบ
- 
+
         # วาดข้อความ
         cv2.putText(image, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
- 
+
     cv2.imwrite(output_path, image)
  
 # ฟังก์ชันสำหรับลบไฟล์
@@ -269,6 +271,30 @@ def delete_file(file_path):
         print(f"Deleted file: {file_path}")
     except Exception as e:
         print(f"Error deleting file: {e}")
+
+# ฟังก์ชันสำหรับ resize ภาพ
+def resize_image(image_path, target_size=(640, 640)):
+    # โหลดภาพโดยลดขนาดและใช้แรมให้น้อยที่สุด
+    image = cv2.imread(image_path, cv2.IMREAD_COLOR)  # เลือกโหลดเป็นสี (ไม่ต้องโหลดข้อมูล alpha channel ถ้าไม่จำเป็น)
+
+    # ตรวจสอบว่าภาพถูกโหลดสำเร็จหรือไม่
+    if image is None:
+        raise ValueError("ไม่สามารถโหลดภาพจากเส้นทางที่ให้มาได้")
+
+    # ลดขนาดภาพ
+    resized_image = cv2.resize(image, target_size)
+
+    # สร้างชื่อไฟล์ใหม่สำหรับภาพที่ถูกปรับขนาด
+    resized_path = image_path.replace(".jpg", "_resized.jpg")  # ใช้ชื่อไฟล์ใหม่
+
+    # บันทึกภาพที่ถูกปรับขนาด โดยใช้การบีบอัด JPEG
+    cv2.imwrite(resized_path, resized_image, [int(cv2.IMWRITE_JPEG_QUALITY), 85])  # การบีบอัด JPEG ด้วยความคมชัด 85%
+
+    # ลบภาพที่โหลดเข้ามาเพื่อประหยัดแรม
+    del image
+    del resized_image
+
+    return resized_path
  
 # API วิเคราะห์ภาพ
 @app.route('/analyze-image', methods=['POST'])
@@ -284,79 +310,83 @@ def analyze_image():
             return jsonify({'error': 'analysis_types not found in API Key data'}), 400
         
         # แปลง quota เป็น integer
-        quota = int(api_key_data['quota'])  # แปลง quota เป็น integer
+        quota = int(api_key_data['quota'])
         if quota == -1:
-            # ยกเว้นกรณี quota เป็น -1
             pass
         elif quota <= 0:
             return jsonify({'error': 'Quota exceeded'}), 400
- 
+        
         if 'image' not in request.files:
             return jsonify({'error': 'No image file provided'}), 400
- 
+        
         file = request.files['image']
         ext = file.filename.rsplit('.', 1)[-1].lower()
         filename = f"{uuid.uuid4()}.{ext}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
- 
+        
         if not is_image(file_path):
             os.remove(file_path)
             return jsonify({'error': 'File is not a valid image'}), 400
- 
+
         # ใช้ Dictionary เก็บผลลัพธ์
         results_dict = {}
- 
-        # สร้างและเริ่ม Thread สำหรับการวิเคราะห์แต่ละโมเดล
+
+        # ประมวลผลแต่ละโมเดลแบบแยกตามที่เลือกจาก API Key
         models_info = [
-            {"name": "porn", "model": models["porn"]},
-            {"name": "weapon", "model": models["weapon"]},
-            {"name": "cigarette", "model": models["cigarette"]},
-            {"name": "violence", "model": models["violence"]}
+            {"name": "porn", "model": get_model("porn")},
+            {"name": "weapon", "model": get_model("weapon")},
+            {"name": "cigarette", "model": get_model("cigarette")},
+            {"name": "violence", "model": get_model("violence")}
         ]
-       
-        # ประมวลผลแต่ละโมเดลแบบ synchronous (ทีละอัน)
-        for model_info in models_info:
-            if model_info["name"] in api_key_data['analysis_types']:
-                analyze_model(file_path, model_info["model"], results_dict, model_info["name"], 0.5)
+
+        # ใช้ ThreadPoolExecutor สำหรับการประมวลผลแบบคู่ขนาน
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for model_info in models_info:
+                if model_info["name"] in api_key_data['analysis_types']:
+                    futures.append(executor.submit(analyze_model, file_path, model_info["name"], results_dict, 0.5))
+
+            # รอให้การประมวลผลทั้งหมดเสร็จ
+            for future in futures:
+                future.result()
 
         # รวมผลลัพธ์จากโมเดลทั้งหมด
         detections = []
         for model_info in models_info:
-            if model_info["name"] in api_key_data['analysis_types']:  # ตรวจสอบประเภทที่เลือก
+            if model_info["name"] in api_key_data['analysis_types']:
                 detections.extend(results_dict[model_info["name"]])
- 
+
         # วาด Bounding Box
         result_image_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_' + filename)
         draw_bounding_boxes(file_path, detections, result_image_path)
- 
+
         # กำหนดสถานะ
         status = "passed"
         for d in detections:
             model_type = d.get("model_type", "")
-            threshold = CONFIDENCE_THRESHOLDS.get(model_type, 0.5)  # เอาค่าจาก CONFIDENCE_THRESHOLDS หรือใช้ค่าเริ่มต้น 0.5
+            threshold = CONFIDENCE_THRESHOLDS.get(model_type, 0.5)
             if d["confidence"] >= threshold:
                 status = "failed"
-                break  # ถ้าเจอกรณีที่ confidence สูงกว่าหรือเท่ากับ threshold ให้หยุดลูปทันที
- 
+                break
+
         # ลบไฟล์ที่อัปโหลด
         os.remove(file_path)
-        # ตั้งค่าให้ลบไฟล์ภาพที่ประมวลผลหลังจาก 5 วินาที
         threading.Timer(10, delete_file, args=[result_image_path]).start()
- 
-        # ลด quota ของ API Key ลง 1 เฉพาะกรณี quota ไม่ใช่ -1 (คือมีจำกัด)
+
+        # ลด quota ของ API Key
         if quota != -1:
             api_keys_collection.update_one(
-        {"api_key": api_key},
-        {"$set": {"quota": quota - 1}}
-        )
- 
+                {"api_key": api_key},
+                {"$set": {"quota": quota - 1}}
+            )
+
         return jsonify({
             'status': status,
             'detections': detections,
             'processed_image_url': f'http://127.0.0.1:5000/uploads/{quote("processed_" + filename)}'
         })
- 
+
     except Exception as e:
         return jsonify({'error': f'Error during analysis: {e}'}), 500
  
