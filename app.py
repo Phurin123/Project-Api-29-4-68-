@@ -21,7 +21,6 @@ import json
 import requests
 import pytesseract
 import re
-from PIL import Image, ImageEnhance, ImageFilter
 from flask import Flask, redirect, url_for
 from flask_dance.contrib.google import make_google_blueprint, google
 from dotenv import load_dotenv
@@ -41,6 +40,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from gradio_client import Client, handle_file
 import shutil
+from datetime import datetime
  
  
 # การตั้งค่า Flask
@@ -65,7 +65,8 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/callback"
  
 # ตั้งค่า Tesseract OCR path (เปลี่ยนตามที่ติดตั้งในเครื่อง)
- 
+ # ตั้งค่า Tesseract OCR path (เปลี่ยนตามที่ติดตั้งในเครื่อง)
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
  
 # เชื่อมต่อ MongoDB
 uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
@@ -429,9 +430,10 @@ def generate_qr():
         "plan": plan,                      
         "analysis_types": analysis_types,  
         "paid": False,                      
-        "created_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        "created_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
+        "created_time": datetime.utcnow()
     })
- 
+    
     # สร้าง QR
     qr_base64 = generate_qr_code(promptpay_id, amount)
  
@@ -440,7 +442,13 @@ def generate_qr():
         "qr_code_url": qr_base64,
         "ref_code": ref_code
     })
- 
+
+# สร้าง TTL index ตอนเริ่มแอพ
+orders_collection.create_index(
+    [("created_time", 1)],
+    expireAfterSeconds=600  # 10 นาที
+)
+
 # ฟังก์ชันตรวจสอบว่ามี QR Code หรือไม่
 def check_qrcode(image_path):
     image = cv2.imread(image_path)
