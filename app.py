@@ -39,6 +39,8 @@ from pymongo.server_api import ServerApi
 from urllib.parse import quote  
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from gradio_client import Client, handle_file
+import shutil
  
  
 # การตั้งค่า Flask
@@ -63,7 +65,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/callback"
  
 # ตั้งค่า Tesseract OCR path (เปลี่ยนตามที่ติดตั้งในเครื่อง)
-
+ 
  
 # เชื่อมต่อ MongoDB
 uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
@@ -75,7 +77,7 @@ try:
     print("Pinged your deployment. You successfully connected to MongoDB!")
 except Exception as e:
     print(e)
-
+ 
 db = client["api_database"]
 users_collection = db["users"]
 api_keys_collection = db["api_keys"]
@@ -163,51 +165,6 @@ UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
  
-# โหลดโมเดลสำหรับการทำนาย (ต้องโหลดโมเดลให้ถูกต้อง)
-def load_model(model_name):
-    return YOLO(os.path.join(os.path.dirname(__file__), 'models', model_name))
- 
-# โมเดล
-models = {}
-
-def get_model(model_name):
-    # โหลดโมเดลเฉพาะเมื่อมีการเรียกใช้งาน
-    if model_name not in models:
-        models[model_name] = load_model(f"best-{model_name}.pt")
-    return models[model_name]
- 
-# รายการของ labels ที่ไม่เหมาะสม
-INAPPROPRIATE_LABELS = {}
-WEAPON_LABELS = {}
-CIGARETTE_LABELS = {}
-VIOLENCE_LABELS = {}
- 
-# กำหนดค่า confidence threshold สำหรับแต่ละโมเดล
-CONFIDENCE_THRESHOLDS = {
-    "porn": 0.5,
-    "weapon": 0.5,
-    "cigarette": 0.5,
-    "violence": 0.5
-}
- 
-# ฟังก์ชันสำหรับการวิเคราะห์ภาพ
-def analyze_model(image_path, model_name, results_dict, threshold):
-    model = get_model(model_name)  # โหลดโมเดลเฉพาะเมื่อใช้
-    results = model.predict(source=image_path)
-    filtered_results = []
-    for result in results:
-        for box in result.boxes:
-            confidence = float(box.conf)
-            if confidence >= threshold:
-                label_name = model.names[int(box.cls)].lower()
-                bbox = box.xyxy.tolist()[0]
-                filtered_results.append({
-                    "label": label_name,
-                    "confidence": confidence,
-                    "bbox": bbox
-                })
-    results_dict[model_name] = filtered_results
- 
 # ฟังก์ชันตรวจสอบประเภทไฟล์ (รองรับทุกประเภท)
 def allowed_file(filename):
     return '.' in filename  # ตรวจสอบว่ามี "." ในชื่อไฟล์
@@ -229,41 +186,6 @@ def convert_jfif_to_jpg(input_path):
     os.remove(input_path)  # ลบไฟล์เดิม
     return output_path
  
-# ฟังก์ชันวาด Bounding Box
-def draw_bounding_boxes(image_path, detections, output_path):
-    image = cv2.imread(image_path)
-
-    for detection in detections:
-        x1, y1, x2, y2 = map(int, detection["bbox"])  # แปลงพิกัดจาก float เป็น int
-        label = detection["label"]
-        confidence = detection["confidence"]
-
-        # ตรวจสอบขนาดของ Bounding Box เพื่อให้ไม่เกินขนาดของภาพ
-        image_height, image_width = image.shape[:2]
-        x1 = max(0, min(x1, image_width - 1))
-        y1 = max(0, min(y1, image_height - 1))
-        x2 = max(0, min(x2, image_width - 1))
-        y2 = max(0, min(y2, image_height - 1))
-
-        # วาด Bounding Box
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)  # สีเขียว
-
-        # สร้างข้อความที่ต้องการแสดง
-        text = f"{label} ({confidence:.2f})"
-
-        # วัดขนาดข้อความ
-        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-
-        # วาดพื้นหลังข้อความ
-        background_rect = (x1, y1 - text_size[1] - 10, x1 + text_size[0], y1)
-        cv2.rectangle(image, (background_rect[0], background_rect[1]),
-                      (background_rect[2], background_rect[3]), (0, 255, 0), -1)  # สีเขียวทึบ
-
-        # วาดข้อความ
-        cv2.putText(image, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
-    cv2.imwrite(output_path, image)
- 
 # ฟังก์ชันสำหรับลบไฟล์
 def delete_file(file_path):
     try:
@@ -272,109 +194,81 @@ def delete_file(file_path):
     except Exception as e:
         print(f"Error deleting file: {e}")
 
-# ฟังก์ชันสำหรับ resize ภาพ
-def resize_image(image_path, target_size=(640, 640)):
-    # โหลดภาพโดยลดขนาดและใช้แรมให้น้อยที่สุด
-    image = cv2.imread(image_path, cv2.IMREAD_COLOR)  # เลือกโหลดเป็นสี (ไม่ต้องโหลดข้อมูล alpha channel ถ้าไม่จำเป็น)
+CONFIDENCE_THRESHOLDS = {
+    "porn": 0.5,
+    "weapon": 0.5,
+    "cigarette": 0.5,
+    "violence": 0.5
+}
 
-    # ตรวจสอบว่าภาพถูกโหลดสำเร็จหรือไม่
-    if image is None:
-        raise ValueError("ไม่สามารถโหลดภาพจากเส้นทางที่ให้มาได้")
-
-    # ลดขนาดภาพ
-    resized_image = cv2.resize(image, target_size)
-
-    # สร้างชื่อไฟล์ใหม่สำหรับภาพที่ถูกปรับขนาด
-    resized_path = image_path.replace(".jpg", "_resized.jpg")  # ใช้ชื่อไฟล์ใหม่
-
-    # บันทึกภาพที่ถูกปรับขนาด โดยใช้การบีบอัด JPEG
-    cv2.imwrite(resized_path, resized_image, [int(cv2.IMWRITE_JPEG_QUALITY), 85])  # การบีบอัด JPEG ด้วยความคมชัด 85%
-
-    # ลบภาพที่โหลดเข้ามาเพื่อประหยัดแรม
-    del image
-    del resized_image
-
-    return resized_path
- 
 # API วิเคราะห์ภาพ
 @app.route('/analyze-image', methods=['POST'])
 def analyze_image():
     try:
-        # ดึง api_key จาก MongoDB เพื่อใช้งาน
         api_key = request.headers.get('x-api-key')
         api_key_data = api_keys_collection.find_one({"api_key": api_key})
         if not api_key_data:
             return jsonify({'error': 'Invalid API Key'}), 401
-        
-        if 'analysis_types' not in api_key_data:
-            return jsonify({'error': 'analysis_types not found in API Key data'}), 400
-        
-        # แปลง quota เป็น integer
+
         quota = int(api_key_data['quota'])
-        if quota == -1:
-            pass
-        elif quota <= 0:
+        if quota != -1 and quota <= 0:
             return jsonify({'error': 'Quota exceeded'}), 400
-        
+
         if 'image' not in request.files:
             return jsonify({'error': 'No image file provided'}), 400
-        
+
         file = request.files['image']
         ext = file.filename.rsplit('.', 1)[-1].lower()
         filename = f"{uuid.uuid4()}.{ext}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
-        
+
         if not is_image(file_path):
             os.remove(file_path)
-            return jsonify({'error': 'File is not a valid image'}), 400
+            return jsonify({'error': 'Invalid image'}), 400
 
-        # ใช้ Dictionary เก็บผลลัพธ์
-        results_dict = {}
+        # ส่ง model_types ทั้งหมดในครั้งเดียว
+        client = Client("Phurin1/best-por")
 
-        # ประมวลผลแต่ละโมเดลแบบแยกตามที่เลือกจาก API Key
-        models_info = [
-            {"name": "porn", "model": get_model("porn")},
-            {"name": "weapon", "model": get_model("weapon")},
-            {"name": "cigarette", "model": get_model("cigarette")},
-            {"name": "violence", "model": get_model("violence")}
-        ]
-
-        # ใช้ ThreadPoolExecutor สำหรับการประมวลผลแบบคู่ขนาน
-        with ThreadPoolExecutor() as executor:
-            futures = []
-            for model_info in models_info:
-                if model_info["name"] in api_key_data['analysis_types']:
-                    futures.append(executor.submit(analyze_model, file_path, model_info["name"], results_dict, 0.5))
-
-            # รอให้การประมวลผลทั้งหมดเสร็จ
-            for future in futures:
-                future.result()
-
-        # รวมผลลัพธ์จากโมเดลทั้งหมด
         detections = []
-        for model_info in models_info:
-            if model_info["name"] in api_key_data['analysis_types']:
-                detections.extend(results_dict[model_info["name"]])
+        image_url = None
 
-        # วาด Bounding Box
-        result_image_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_' + filename)
-        draw_bounding_boxes(file_path, detections, result_image_path)
+        # ✅ เริ่มลูป model_type อย่างถูกต้อง
+        result = client.predict(
+            image=handle_file(file_path),
+            model_types=api_key_data['analysis_types'],
+            api_name="/predict"
+        )
 
-        # กำหนดสถานะ
+        output_image = result[0]
+        detection_data = json.loads(result[1])
+
+        # บันทึกไฟล์ผลลัพธ์แค่ครั้งเดียว
+        processed_filename = f"processed_{uuid.uuid4()}.jpg"
+        processed_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_filename)
+
+        if isinstance(output_image, str) and os.path.exists(output_image):
+            shutil.copy(output_image, processed_path)
+        elif isinstance(output_image, Image.Image):
+            output_image.save(processed_path)
+        else:
+            with open(processed_path, 'wb') as f:
+                f.write(output_image)
+
+        image_url = url_for('uploaded_file', filename=processed_filename, _external=True)
+
+        detections.extend(detection_data)
+      
+        # กำหนดความมั่นใจขั้นต่ำ
         status = "passed"
         for d in detections:
-            model_type = d.get("model_type", "")
-            threshold = CONFIDENCE_THRESHOLDS.get(model_type, 0.5)
-            if d["confidence"] >= threshold:
+            if d["confidence"] >= CONFIDENCE_THRESHOLDS.get(d["model_type"], 0.5):
                 status = "failed"
                 break
 
-        # ลบไฟล์ที่อัปโหลด
         os.remove(file_path)
-        threading.Timer(10, delete_file, args=[result_image_path]).start()
+        threading.Timer(10, delete_file, args=[processed_path]).start()
 
-        # ลด quota ของ API Key
         if quota != -1:
             api_keys_collection.update_one(
                 {"api_key": api_key},
@@ -382,14 +276,14 @@ def analyze_image():
             )
 
         return jsonify({
-            'status': status,
-            'detections': detections,
-            'processed_image_url': f'http://127.0.0.1:5000/uploads/{quote("processed_" + filename)}'
+            "status": status,
+            "detections": detections,
+            "processed_image_url": image_url
         })
 
     except Exception as e:
-        return jsonify({'error': f'Error during analysis: {e}'}), 500
- 
+        return jsonify({'error': str(e)}), 500
+
 # API สำหรับขอ API Key
 @app.route('/request-api-key', methods=['POST'])
 def request_api_key():
@@ -522,7 +416,7 @@ def generate_qr():
     current_time = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
  
     # สร้าง UUID และลบเครื่องหมาย "-" ออก
-    uuid_value = uuid.uuid4().hex  # .hex จะได้ UUID ที่ไม่มีเครื่องหมาย "-"
+    uuid_value = uuid.uuid4().hex[:10] # .hex จะได้ UUID ที่ไม่มีเครื่องหมาย "-"
     ref_code = f"{current_time} {uuid_value}"  # ใช้ช่องว่างแทนที่เครื่องหมาย "-"
  
  
@@ -554,41 +448,41 @@ def check_qrcode(image_path):
         return False
     detector = cv2.QRCodeDetector()
     retval, points = detector.detect(image)  # ใช้ detect() แทน detectAndDecode()
-    
+   
     if retval:  # ถ้าคืนค่า True แสดงว่ามี QR code ในภาพ
         return True
     return False
-
-
+ 
+ 
 @app.route('/upload-receipt', methods=['POST'])
 def upload_receipt():
     if 'receipt' not in request.files:
         return jsonify({'error': 'No receipt file provided'}), 400
-
+ 
     file = request.files['receipt']
     filename = secure_filename(file.filename)
     save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(save_path)
-
+ 
     if not is_image(save_path):
         os.remove(save_path)
         return jsonify({'error': 'ไฟล์ไม่ใช่รูปภาพ'}), 400
-
+ 
     # ตรวจสอบว่าภาพมี QR Code หรือไม่
     if not check_qrcode(save_path):
         os.remove(save_path)
         return jsonify({'error': 'รูปเเบบใบเสร็จไม่ถูกต้อง'}), 400
-
+ 
     # ดึงข้อมูลจาก OCR
     ocr_data = extract_info(save_path)
-    
+   
     # ตรวจสอบข้อมูลที่จำเป็นต้องมี
     required_fields = ['full_text', 'date', 'time', 'uuids', 'amount', 'full_name', 'time_receipts']
     for field in required_fields:
         if not ocr_data.get(field):
             os.remove(save_path)
             return jsonify({'error': f"ข้อมูล {field} ขาดหายไปหรือเป็นค่าว่าง"}), 400
-
+ 
     # รับข้อมูลที่ได้จาก OCR
     text = ocr_data['full_text']
     uuid_list = ocr_data['date'] + " " + ocr_data['time'] + " " + " ".join(ocr_data['uuids'])
@@ -597,7 +491,7 @@ def upload_receipt():
     amount = ocr_data['amount']
     full_name = ocr_data['full_name']
     time_receipts = ocr_data["time_receipts"]
-
+ 
     # แสดงค่าของตัวแปรที่ได้รับ
     print("OCR Full Text: ", text)
     print("UUID List: ", uuid_list)
@@ -606,13 +500,13 @@ def upload_receipt():
     print("Amount from OCR: ", amount)
     print("full_name: ", full_name)
     print("time_receipts: ", time_receipts)
-
+ 
     # ตรวจสอบ UUID กับฐานข้อมูล
     matched_order = orders_collection.find_one({"ref_code": uuid_list})  # ใช้ uuid_list ค้นหาโดยตรง
     if not matched_order:
         os.remove(save_path)  # ลบไฟล์ที่ไม่ได้ใช้งาน
         return jsonify({
-            'error': 'ไม่พบรหัสอ้างอิงในฐานข้อมูล', 
+            'error': 'ไม่พบรหัสอ้างอิงในฐานข้อมูล',
             'ocr_data': {
                 'full_text': text,
                 'uuids': uuid_list,
@@ -622,20 +516,20 @@ def upload_receipt():
                 'fullname': full_name
             }
         }), 404
-
+ 
     # ตรวจสอบชื่อ
     full_name = ocr_data.get("full_name", "")
     if "ภูรินทร์สุขมั่น" not in full_name:
         os.remove(save_path)
         return jsonify({'error': 'ชื่อผู้โอนไม่ถูกต้อง'}), 400
-
+ 
     # ตรวจสอบวันที่
     try:
         created_datetime = datetime.strptime(matched_order["created_at"], '%d/%m/%Y %H:%M:%S')
     except:
         os.remove(save_path)
         return jsonify({'error': 'ข้อมูลวันที่ในฐานข้อมูลผิดพลาด'}), 500
-
+ 
     if date_text:
         try:
             date_from_ocr = datetime.strptime(date_text, '%d/%m/%Y').date()
@@ -645,21 +539,21 @@ def upload_receipt():
         except:
             os.remove(save_path)
             return jsonify({'error': 'รูปแบบวันที่ในสลิปผิด'}), 400
-
+ 
     # ตรวจสอบเวลา
     if time_receipts:
         try:
             time_from_ocr = datetime.strptime(time_receipts, '%H:%M')
             time_from_ocr_full = datetime.combine(created_datetime.date(), time_from_ocr.time())
             time_diff = abs((created_datetime - time_from_ocr_full).total_seconds())
-
+ 
             if time_diff > 300:
                 os.remove(save_path)
                 return jsonify({'error': 'เวลาในสลิปห่างกันเกิน 5 นาที'}), 400
         except:
             os.remove(save_path)
             return jsonify({'error': 'รูปแบบเวลาในสลิปผิด'}), 400
-
+ 
     # ตรวจสอบยอดเงิน
     if amount:
         try:
@@ -670,12 +564,12 @@ def upload_receipt():
         except:
             os.remove(save_path)
             return jsonify({'error': 'ยอดเงินไม่สามารถแปลงได้'}), 400
-
+ 
     # สร้าง API Key และอัปเดตสถานะการชำระเงิน
     orders_collection.update_one({"_id": matched_order["_id"]}, {
         "$set": {"paid": True, "paid_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     })
-
+ 
     api_key = str(uuid.uuid4())
     api_keys_collection.insert_one({
         "email": matched_order.get('email', ''),
@@ -685,11 +579,11 @@ def upload_receipt():
         "plan": matched_order.get('plan', 'paid'),
         "created_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S')
     })
-
+ 
     # ลบออร์เดอร์ออกจากฐานข้อมูลหลังจากสร้าง API Key แล้ว
     orders_collection.delete_one({"ref_code": uuid_list})
     os.remove(save_path)
-
+ 
     return jsonify({
         'success': True,
         'message': 'อัปโหลดสำเร็จ',
@@ -703,7 +597,7 @@ def upload_receipt():
             'full_text': text,
         }
     }), 200
-
+ 
 @app.route('/auth/google')
 def auth_google():
     google_auth_url = (
