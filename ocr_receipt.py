@@ -17,7 +17,7 @@ def extract_info(image_path):
     text_cleaneds = re.sub(r'\s+', '', text_cleaned)
 
     # หาข้อมูลต่าง ๆ
-    uuid_pattern = r'\b(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{21,}\b'
+    uuid_pattern = r'\b(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{10}\b'
     uuid_matches = re.findall(uuid_pattern, text_cleaned)
     time_pattern = r'\d{2}:\d{2}:\d{2}'
     time_match = re.search(time_pattern, text_cleaneds)
