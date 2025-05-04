@@ -1,10 +1,3 @@
-// ฟังก์ชันสำหรับการโหลด navbar จากไฟล์ HTML
-fetch("../menubar/menubar.html")  
-  .then(res => res.text())
-  .then(data => {
-  document.getElementById("menubar").innerHTML = data;
-});
-
 
 // ฟังก์ชันสำหรับอัปโหลดภาพเมื่อคลิกปุ่ม "อัปโหลดรูปภาพ"
 function uploadImage() {
