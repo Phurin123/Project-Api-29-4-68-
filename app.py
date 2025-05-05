@@ -42,7 +42,10 @@ from collections import defaultdict
 from gradio_client import Client, handle_file
 import shutil
  
- 
+os.system('apt-get update && apt-get install -y tesseract-ocr')
+os.system('tesseract --version')
+pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'
+
 # การตั้งค่า Flask
 app = Flask(__name__)
 CORS(app)
