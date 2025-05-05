@@ -4,6 +4,7 @@ import numpy as np
 import re
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
+import os
 
 # กำหนด path ของ tesseract.exe
 os.system('apt-get update && apt-get install -y tesseract-ocr')
