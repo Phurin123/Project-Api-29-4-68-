@@ -6,7 +6,9 @@ from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 
 # กำหนด path ของ tesseract.exe
-
+os.system('apt-get update && apt-get install -y tesseract-ocr')
+os.system('tesseract --version')
+pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'
 
 def extract_info(image_path):
     image = cv2.imread(image_path)
