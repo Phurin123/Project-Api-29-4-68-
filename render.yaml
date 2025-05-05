@@ -3,6 +3,5 @@ services:
     name: objectxify
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: |
-  apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-tha
-  gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-tha && gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
+
