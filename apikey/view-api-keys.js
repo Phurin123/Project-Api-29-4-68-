@@ -1,23 +1,28 @@
+// รับ email จาก URL ถ้ามี
+const urlParams = new URLSearchParams(window.location.search);
+const emailFromURL = urlParams.get('email');
+
+// ถ้ายังไม่มี email ใน sessionStorage แต่มีใน URL ให้เก็บไว้
+if (emailFromURL && !sessionStorage.getItem('userEmail')) {
+    sessionStorage.setItem('userEmail', emailFromURL);
+}
+
 // ฟังก์ชันในการดึงข้อมูล API Keys ของผู้ใช้
 function fetchApiKeys() {
     // ดึงอีเมลจาก sessionStorage ที่เก็บไว้ในระหว่างการ login
     const email = sessionStorage.getItem('userEmail');
 
     if (!email) {
-        // หากไม่มีอีเมลแสดงว่าไม่สามารถเข้าถึงข้อมูลได้
         document.getElementById("apiKeysList").innerHTML = "<p>กรุณาเข้าสู่ระบบก่อน</p>";
         return;
     }
 
-    // ส่งคำขอ GET ไปยัง /get-api-keys โดยใช้ email เป็นพารามิเตอร์
-    fetch(`https://project-api-objectxify.onrender.com/get-api-keys?email=${email}`)
+    fetch(`https://project-api-objectxify.onrender.com/get-api-keys?email=${email}`)  // แนะนำให้เปลี่ยน URL ให้เรียก Render จริง
         .then(response => response.json())
         .then(data => {
             if (data.error) {
-                // แสดงข้อผิดพลาดหากไม่พบ API Keys
                 document.getElementById("apiKeysList").innerHTML = `<p>${data.error}</p>`;
             } else {
-                // แสดง API Keys ที่ได้รับจากฐานข้อมูล
                 let apiKeysHtml = "";
                 data.api_keys.forEach(key => {
                     apiKeysHtml += `
@@ -39,6 +44,6 @@ function fetchApiKeys() {
 }
 
 // เรียกใช้งานฟังก์ชันเมื่อโหลดหน้า
-window.onload = function() {
+window.onload = function () {
     fetchApiKeys();
 };
