@@ -33,16 +33,13 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_mail import Mail, Message
 import random
-from ocr_receipt import extract_info
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from urllib.parse import quote  
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from gradio_client import Client, handle_file
-import shutil
- 
- 
+
 # การตั้งค่า Flask
 app = Flask(__name__)
 CORS(app)
