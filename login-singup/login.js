@@ -20,7 +20,7 @@ loginButton.addEventListener("click", async (event) => {
 
   // ส่งข้อมูลไปยัง back-end (API login)
   try {
-    let response = await fetch('http://localhost:5000/login', {
+    let response = await fetch('https://project-api-objectxify.onrender.com/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -36,7 +36,7 @@ loginButton.addEventListener("click", async (event) => {
       sessionStorage.setItem('userEmail', username);  // หรือ localStorage.setItem()
     
       // หลังจาก login สำเร็จ ให้ไปที่หน้า apikey.html
-      window.location.href = '../apikey/view-api-keys.html'; // เปลี่ยนเส้นทางไปยังหน้า apikey.html
+      window.location.href = '../apikey/mainapikey.html'; // เปลี่ยนเส้นทางไปยังหน้า apikey.html
     } else {
       // แสดงข้อความผิดพลาดจาก back-end
       alert(data.error || "เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
@@ -49,5 +49,5 @@ loginButton.addEventListener("click", async (event) => {
 
 function loginWithGoogle() {
   // เปลี่ยนเส้นทางไปยัง Google OAuth URL
-  window.location.href = 'http://localhost:5000/auth/google';
+  window.location.href = 'https://project-api-objectxify.onrender.com/auth/google';
 }
