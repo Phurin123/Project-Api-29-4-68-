@@ -42,10 +42,7 @@ from collections import defaultdict
 from gradio_client import Client, handle_file
 import shutil
  
-os.system('apt-get update && apt-get install -y tesseract-ocr')
-os.system('tesseract --version')
-pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'
-
+ 
 # การตั้งค่า Flask
 app = Flask(__name__)
 CORS(app)
@@ -66,9 +63,6 @@ mail = Mail(app)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/callback"
- 
-# ตั้งค่า Tesseract OCR path (เปลี่ยนตามที่ติดตั้งในเครื่อง)
- 
  
 # เชื่อมต่อ MongoDB
 uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
@@ -468,31 +462,37 @@ def check_qrcode(image_path):
 def upload_receipt():
     if 'receipt' not in request.files:
         return jsonify({'error': 'No receipt file provided'}), 400
- 
+    
     file = request.files['receipt']
     filename = secure_filename(file.filename)
     save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(save_path)
- 
+    
     if not is_image(save_path):
         os.remove(save_path)
         return jsonify({'error': 'ไฟล์ไม่ใช่รูปภาพ'}), 400
- 
+    
     # ตรวจสอบว่าภาพมี QR Code หรือไม่
     if not check_qrcode(save_path):
         os.remove(save_path)
         return jsonify({'error': 'รูปเเบบใบเสร็จไม่ถูกต้อง'}), 400
- 
-    # ดึงข้อมูลจาก OCR
-    ocr_data = extract_info(save_path)
-   
+
+    # สร้าง client สำหรับ Gradio API
+    client = Client("Phurin1/ocr-receipt")
+    
+    # ส่งไฟล์ภาพไปยัง Gradio API
+    result = client.predict(image={"path": save_path}, api_name="/predict")
+    
+    # ดึงข้อมูลจากผลลัพธ์ของ OCR
+    ocr_data = result[0]
+    
     # ตรวจสอบข้อมูลที่จำเป็นต้องมี
     required_fields = ['full_text', 'date', 'time', 'uuids', 'amount', 'full_name', 'time_receipts']
     for field in required_fields:
         if not ocr_data.get(field):
             os.remove(save_path)
             return jsonify({'error': f"ข้อมูล {field} ขาดหายไปหรือเป็นค่าว่าง"}), 400
- 
+    
     # รับข้อมูลที่ได้จาก OCR
     text = ocr_data['full_text']
     uuid_list = ocr_data['date'] + " " + ocr_data['time'] + " " + " ".join(ocr_data['uuids'])
@@ -501,7 +501,7 @@ def upload_receipt():
     amount = ocr_data['amount']
     full_name = ocr_data['full_name']
     time_receipts = ocr_data["time_receipts"]
- 
+    
     # แสดงค่าของตัวแปรที่ได้รับ
     print("OCR Full Text: ", text)
     print("UUID List: ", uuid_list)
@@ -510,11 +510,11 @@ def upload_receipt():
     print("Amount from OCR: ", amount)
     print("full_name: ", full_name)
     print("time_receipts: ", time_receipts)
- 
+    
     # ตรวจสอบ UUID กับฐานข้อมูล
-    matched_order = orders_collection.find_one({"ref_code": uuid_list})  # ใช้ uuid_list ค้นหาโดยตรง
+    matched_order = orders_collection.find_one({"ref_code": uuid_list})
     if not matched_order:
-        os.remove(save_path)  # ลบไฟล์ที่ไม่ได้ใช้งาน
+        os.remove(save_path)
         return jsonify({
             'error': 'ไม่พบรหัสอ้างอิงในฐานข้อมูล',
             'ocr_data': {
@@ -526,20 +526,20 @@ def upload_receipt():
                 'fullname': full_name
             }
         }), 404
- 
+    
     # ตรวจสอบชื่อ
     full_name = ocr_data.get("full_name", "")
     if "ภูรินทร์สุขมั่น" not in full_name:
         os.remove(save_path)
         return jsonify({'error': 'ชื่อผู้โอนไม่ถูกต้อง'}), 400
- 
+    
     # ตรวจสอบวันที่
     try:
         created_datetime = datetime.strptime(matched_order["created_at"], '%d/%m/%Y %H:%M:%S')
     except:
         os.remove(save_path)
         return jsonify({'error': 'ข้อมูลวันที่ในฐานข้อมูลผิดพลาด'}), 500
- 
+    
     if date_text:
         try:
             date_from_ocr = datetime.strptime(date_text, '%d/%m/%Y').date()
@@ -549,21 +549,20 @@ def upload_receipt():
         except:
             os.remove(save_path)
             return jsonify({'error': 'รูปแบบวันที่ในสลิปผิด'}), 400
- 
+    
     # ตรวจสอบเวลา
     if time_receipts:
         try:
             time_from_ocr = datetime.strptime(time_receipts, '%H:%M')
             time_from_ocr_full = datetime.combine(created_datetime.date(), time_from_ocr.time())
             time_diff = abs((created_datetime - time_from_ocr_full).total_seconds())
- 
             if time_diff > 300:
                 os.remove(save_path)
                 return jsonify({'error': 'เวลาในสลิปห่างกันเกิน 5 นาที'}), 400
         except:
             os.remove(save_path)
             return jsonify({'error': 'รูปแบบเวลาในสลิปผิด'}), 400
- 
+    
     # ตรวจสอบยอดเงิน
     if amount:
         try:
@@ -574,12 +573,12 @@ def upload_receipt():
         except:
             os.remove(save_path)
             return jsonify({'error': 'ยอดเงินไม่สามารถแปลงได้'}), 400
- 
+    
     # สร้าง API Key และอัปเดตสถานะการชำระเงิน
     orders_collection.update_one({"_id": matched_order["_id"]}, {
         "$set": {"paid": True, "paid_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
     })
- 
+    
     api_key = str(uuid.uuid4())
     api_keys_collection.insert_one({
         "email": matched_order.get('email', ''),
@@ -589,11 +588,11 @@ def upload_receipt():
         "plan": matched_order.get('plan', 'paid'),
         "created_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S')
     })
- 
+    
     # ลบออร์เดอร์ออกจากฐานข้อมูลหลังจากสร้าง API Key แล้ว
     orders_collection.delete_one({"ref_code": uuid_list})
     os.remove(save_path)
- 
+    
     return jsonify({
         'success': True,
         'message': 'อัปโหลดสำเร็จ',
