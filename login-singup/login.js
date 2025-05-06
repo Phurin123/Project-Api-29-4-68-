@@ -36,7 +36,7 @@ loginButton.addEventListener("click", async (event) => {
       sessionStorage.setItem('userEmail', username);  // หรือ localStorage.setItem()
     
       // หลังจาก login สำเร็จ ให้ไปที่หน้า apikey.html
-      window.location.href = '../apikey/mainapikey.html'; // เปลี่ยนเส้นทางไปยังหน้า apikey.html
+      window.location.href = '../apikey/view-api-keys.html'; // เปลี่ยนเส้นทางไปยังหน้า apikey.html
     } else {
       // แสดงข้อความผิดพลาดจาก back-end
       alert(data.error || "เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
