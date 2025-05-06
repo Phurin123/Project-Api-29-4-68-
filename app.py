@@ -656,7 +656,7 @@ def google_callback():
         })
  
     # เปลี่ยนเส้นทางไปยัง plan.html
-    return redirect('/apikey/mainapikey.html')
+    return redirect(f'/apikey/view-api-keys.html?email={email}')
  
 # สร้าง OTP และส่งอีเมล
 @app.route('/reset-request', methods=['POST'])
