@@ -474,18 +474,13 @@ def upload_receipt():
         os.remove(save_path)
         return jsonify({'error': 'รูปเเบบใบเสร็จไม่ถูกต้อง'}), 400
 
-    # แปลงไฟล์ภาพที่ได้รับเป็น numpy array
-    img = Image.open(save_path)
-    img_np = np.array(img.convert('RGB'))  # แปลงเป็น numpy array (RGB)
-    
-    # สร้าง client สำหรับ Gradio API
     client = Client("Phurin1/ocr-receipt")
+    result = client.predict(
+        image=handle_file(save_path),
+        api_name="/predict"
+    )
     
-    # ส่งไฟล์ภาพไปยัง Gradio API
-    result = client.predict(img_np, api_name="/predict")
-    
-    # ดึงข้อมูลจากผลลัพธ์ของ OCR
-    ocr_data = result[0]
+    ocr_data = result
     
     # ตรวจสอบข้อมูลที่จำเป็นต้องมี
     required_fields = ['full_text', 'date', 'time', 'uuids', 'amount', 'full_name', 'time_receipts']
@@ -532,7 +527,7 @@ def upload_receipt():
     full_name = ocr_data.get("full_name", "")
     if "ภูรินทร์สุขมั่น" not in full_name:
         os.remove(save_path)
-        return jsonify({'error': 'ชื่อผู้โอนไม่ถูกต้อง'}), 400
+        return jsonify({'error': 'ชื่อผู้รับเงินไม่ถูกต้อง'}), 400
     
     # ตรวจสอบวันที่
     try:
