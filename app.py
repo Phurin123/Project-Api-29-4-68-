@@ -454,7 +454,7 @@ def check_qrcode(image_path):
         return True
     return False
  
- 
+# ฟังก์ชันตรวจสอบรหัสอ้างอิงและเวลาในสลิป
 @app.route('/upload-receipt', methods=['POST'])
 def upload_receipt():
     if 'receipt' not in request.files:
@@ -474,11 +474,15 @@ def upload_receipt():
         os.remove(save_path)
         return jsonify({'error': 'รูปเเบบใบเสร็จไม่ถูกต้อง'}), 400
 
+    # แปลงไฟล์ภาพที่ได้รับเป็น numpy array
+    img = Image.open(save_path)
+    img_np = np.array(img.convert('RGB'))  # แปลงเป็น numpy array (RGB)
+    
     # สร้าง client สำหรับ Gradio API
     client = Client("Phurin1/ocr-receipt")
     
     # ส่งไฟล์ภาพไปยัง Gradio API
-    result = client.predict(image={"path": save_path}, api_name="/predict")
+    result = client.predict(img_np, api_name="/predict")
     
     # ดึงข้อมูลจากผลลัพธ์ของ OCR
     ocr_data = result[0]
