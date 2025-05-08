@@ -40,6 +40,8 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from gradio_client import Client, handle_file
 from zoneinfo import ZoneInfo
+import shutil
+import jwt
 
 # การตั้งค่า Flask
 app = Flask(__name__)
@@ -61,6 +63,10 @@ mail = Mail(app)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/callback"
+
+# การใช้ JWT_SECRET_KEY และการตั้งค่าเวลา JWT Expiry
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES')))
  
 # เชื่อมต่อ MongoDB
 uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
