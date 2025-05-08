@@ -66,8 +66,7 @@ GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/c
 
 # การใช้ JWT_SECRET_KEY และการตั้งค่าเวลา JWT Expiry
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES')))
- 
+
 # เชื่อมต่อ MongoDB
 uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
 # Create a new client and connect to the server
