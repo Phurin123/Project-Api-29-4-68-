@@ -39,6 +39,7 @@ from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from gradio_client import Client, handle_file
+from zoneinfo import ZoneInfo
 
 # การตั้งค่า Flask
 app = Flask(__name__)
@@ -405,38 +406,38 @@ def generate_qr():
     quota = int(data.get('quota', 100))
     plan = data.get('plan', 'paid')
     analysis_types = data.get('analysis_types', [])  # ต้องเป็น list
- 
-   # ใช้เวลาปัจจุบันในรูปแบบ วันที่/เดือน/ปี ชั่วโมง:นาที:วินาที
-    current_time = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
- 
-    # สร้าง UUID และลบเครื่องหมาย "-" ออก
-    uuid_value = uuid.uuid4().hex[:10] # .hex จะได้ UUID ที่ไม่มีเครื่องหมาย "-"
-    ref_code = f"{current_time} {uuid_value}"  # ใช้ช่องว่างแทนที่เครื่องหมาย "-"
- 
- 
-    # บันทึกออร์เดอร์ลงฐานข้อมูล สถานะยังไม่ชำระ
+
+    # เวลาประเทศไทย
+    thai_time = datetime.now(ZoneInfo("Asia/Bangkok"))
+    current_time = thai_time.strftime('%d/%m/%Y %H:%M:%S')
+
+    # สร้าง UUID และ ref_code
+    uuid_value = uuid.uuid4().hex[:10]
+    ref_code = f"{current_time} {uuid_value}"
+
+    # บันทึกออร์เดอร์ลงฐานข้อมูล
     orders_collection.insert_one({
-        "ref_code": ref_code,              
-        "email": email,                    
-        "amount": amount,                  
-        "quota": quota,                    
-        "plan": plan,                      
-        "analysis_types": analysis_types,  
-        "paid": False,                      
-        "created_at": datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
-        "created_time": datetime.utcnow()
+        "ref_code": ref_code,
+        "email": email,
+        "amount": amount,
+        "quota": quota,
+        "plan": plan,
+        "analysis_types": analysis_types,
+        "paid": False,
+        "created_at": current_time,                      # เวลาโชว์แบบไทย
+        "created_time": datetime.now(timezone.utc)       # สำหรับ TTL index
     })
-    
+
     # สร้าง QR
     qr_base64 = generate_qr_code(promptpay_id, amount)
- 
+
     # ส่งกลับ QR + ref_code
     return jsonify({
         "qr_code_url": qr_base64,
         "ref_code": ref_code
     })
 
-# สร้าง TTL index ตอนเริ่มแอพ
+# TTL index
 orders_collection.create_index(
     [("created_time", 1)],
     expireAfterSeconds=600  # 10 นาที
