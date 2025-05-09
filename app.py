@@ -64,9 +64,6 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = "https://project-api-objectxify.onrender.com/auth/google/callback"
 
-# การใช้ JWT_SECRET_KEY และการตั้งค่าเวลา JWT Expiry
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-
 # เชื่อมต่อ MongoDB
 uri = "mongodb+srv://66020981:Phurin192547@project-api.tsr0e8c.mongodb.net/?retryWrites=true&w=majority&appName=Project-API"
 # Create a new client and connect to the server
@@ -370,7 +367,19 @@ def get_api_keys():
             'quota': key.get('quota', 0)
         } for key in api_keys]
     })
- 
+
+@app.route("/get-username", methods=["GET"])
+def get_username():
+    email = request.args.get("email")
+    if not email:
+        return jsonify({"error": "Missing email parameter"}), 400
+
+    user = users_collection.find_one({"email": email})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({"username": user.get("username")}), 200
+
 # API สำหรับดาวน์โหลดเอกสารคู่มือ
 @app.route('/manual')
 def download_manual():
