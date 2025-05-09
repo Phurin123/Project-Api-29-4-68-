@@ -7,9 +7,25 @@ if (emailFromURL && !sessionStorage.getItem('userEmail')) {
     sessionStorage.setItem('userEmail', emailFromURL);
 }
 
+// ฟังก์ชันในการดึงชื่อผู้ใช้
+async function fetchUsername(email) {
+    try {
+        const res = await fetch(`http://localhost:5000/get-username?email=${email}`);
+        const data = await res.json();
+
+        if (res.ok && data.username) {
+            document.getElementById("usernameDisplay").textContent = `👤 สวัสดีคุณ: ${data.username}`;
+        } else {
+            document.getElementById("usernameDisplay").textContent = `👤 Logged in as: ${email}`;
+        }
+    } catch (err) {
+        console.error("Error fetching username:", err);
+        document.getElementById("usernameDisplay").textContent = `👤 Logged in as: ${email}`;
+    }
+}
+
 // ฟังก์ชันในการดึงข้อมูล API Keys ของผู้ใช้
 function fetchApiKeys() {
-    // ดึงอีเมลจาก sessionStorage ที่เก็บไว้ในระหว่างการ login
     const email = sessionStorage.getItem('userEmail');
 
     if (!email) {
@@ -17,7 +33,7 @@ function fetchApiKeys() {
         return;
     }
 
-    fetch(`https://project-api-objectxify.onrender.com/get-api-keys?email=${email}`)  // แนะนำให้เปลี่ยน URL ให้เรียก Render จริง
+    fetch(`http://localhost:5000/get-api-keys?email=${email}`)  // เปลี่ยน URL เมื่อนำไป deploy
         .then(response => response.json())
         .then(data => {
             if (data.error) {
@@ -43,7 +59,14 @@ function fetchApiKeys() {
         });
 }
 
-// เรียกใช้งานฟังก์ชันเมื่อโหลดหน้า
-window.onload = function () {
+// โหลดข้อมูลเมื่อเปิดหน้า
+window.onload = async function () {
+    const email = sessionStorage.getItem('userEmail');
+    if (!email) {
+        document.getElementById("usernameDisplay").textContent = "⚠️ กรุณาเข้าสู่ระบบ";
+        return;
+    }
+
+    await fetchUsername(email);
     fetchApiKeys();
 };
