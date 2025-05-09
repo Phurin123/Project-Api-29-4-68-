@@ -41,7 +41,6 @@ from collections import defaultdict
 from gradio_client import Client, handle_file
 from zoneinfo import ZoneInfo
 import shutil
-import jwt
 
 # การตั้งค่า Flask
 app = Flask(__name__)
